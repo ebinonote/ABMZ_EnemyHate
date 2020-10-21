@@ -1,6 +1,6 @@
 ﻿// =============================================================================
 // ABMZ_EnemyHate.js
-// Version: 1.17
+// Version: 1.18
 // -----------------------------------------------------------------------------
 // Copyright (c) 2015 ヱビ
 // Released under the MIT license
@@ -13,7 +13,7 @@
 
 /*:
  * @target MZ
- * @plugindesc v1.17 敵が最もヘイトの高いアクターを狙います。
+ * @plugindesc v1.18 敵が最もヘイトの高いアクターを狙います。
  * ヘイトはバトル中の行動で変化します。
  * @author ヱビ
  * @url http://www.zf.em-net.ne.jp/~ebi-games/
@@ -559,6 +559,10 @@
  * ============================================================================
  * 更新履歴
  * ============================================================================
+ * 
+ * Version 1.18
+ *   敵リストを表示しておらず、ヘイトがマイナスになったとき、エラーが出て止まっ
+ *   てしまうバグを修正しました。
  * 
  * Version 1.17
  *   ヘイトゲージと敵リストを戦闘中にON、OFFにできるように修正しました。
@@ -1779,7 +1783,7 @@ Sprite_Actor.prototype.updatePosition = function() {
 		var actor = this._actor;
 		if (!actor) return;
 		var cw = this.contents.width;
-		
+		if (!$gameSystem.isDispEnemyHateList()) return;
 		this.drawText(actor.name(), 0, 0, cw);
 		var y = this.lineHeight();
 		var enemies = $gameTroop.aliveMembers();
@@ -1809,6 +1813,7 @@ Sprite_Actor.prototype.updatePosition = function() {
 		this.contents.clear();
 		var enemy = this._enemy;
 		if (!enemy) return;
+		if (!$gameSystem.isDispEnemyHateList()) return;
 		this.drawText(enemy.name(), 0, 0, cw);
 		var y = this.lineHeight();
 		var actors = $gameParty.battleMembers();
@@ -1927,6 +1932,7 @@ Window_Base.prototype.drawGauge = function(x, y, width, rate, color1, color2) {
 		this.contents.clear();
 		var enemy = this._enemy;
 		var cw = this.contents.width;
+		if (!$gameSystem.isDispHateGauge()) return;
 		if (!enemy) return;
 		var actor = this._actor;
 		if (!actor) return;
