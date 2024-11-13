@@ -1,6 +1,6 @@
 ﻿// =============================================================================
 // ABMZ_EnemyHate.js
-// Version: 1.18
+// Version: 1.20
 // -----------------------------------------------------------------------------
 // Copyright (c) 2015 ヱビ
 // Released under the MIT license
@@ -13,7 +13,7 @@
 
 /*:
  * @target MZ
- * @plugindesc v1.18 敵が最もヘイトの高いアクターを狙います。
+ * @plugindesc v1.20 敵が最もヘイトの高いアクターを狙います。
  * ヘイトはバトル中の行動で変化します。
  * @author ヱビ
  * @url http://www.zf.em-net.ne.jp/~ebi-games/
@@ -90,6 +90,14 @@
  * @on 減らす
  * @off 減らさない
  * @desc ヘイトが増える行動をしたとき、味方のヘイトを減らしますか？
+ * @default false
+ * 
+ * @param DeadHateReset
+ * @text 戦闘不能時ヘイトリセット
+ * @type boolean
+ * @on リセット
+ * @off そのまま
+ * @desc 味方が戦闘不能になった時、ヘイトを0に戻しますか？
  * @default false
  * 
  * @param OthersHateRateFormula
@@ -560,6 +568,13 @@
  * 更新履歴
  * ============================================================================
  * 
+ * Version 1.20
+ *   味方が戦闘不能になった時ヘイトを0に戻すプラグインパラメータ「戦闘不能時ヘ
+ *   イトリセット」を追加しました。
+ * 
+ * Version 1.19
+ *   ヘイトが減少する時は、「狙われ率」が影響しないように変更しました。
+ * 
  * Version 1.18
  *   敵リストを表示しておらず、ヘイトがマイナスになったとき、エラーが出て止まっ
  *   てしまうバグを修正しました。
@@ -690,6 +705,7 @@
 	var StateToActorHateFormula = (parameters['StateToActorHateFormula'] || 0);
 	var RemoveStateHateFormula = (parameters['RemoveStateHateFormula'] || 0);
 	var ReduceOthersHate = eval(parameters['ReduceOthersHate'] == 1);
+	var DeadHateReset = (parameters['DeadHateReset'] || 0);
 	var OthersHateRateFormula = (parameters['OthersHateRateFormula'] || 0);
 	var ShowEnemyList = eval(parameters['ShowEnemyList']);
 	var EnemyListX = Number(parameters['EnemyListX']);
@@ -954,11 +970,24 @@
 			return false;
 		});
 	};
+	// ver 1.20
+	Game_Enemy.prototype.resetHateForTheActor = function(actorId) {
+		return this._hates[actorId] = 0;
+	};
+//=============================================================================
+// Game_Troop
+//=============================================================================
 
+	// ver 1.20
+	Game_Troop.prototype.resetHateForTheActor = function(actorId) {
+		this.members().forEach(function(enemy){
+			enemy.resetHateForTheActor(actorId);
+		});
+	};
 //=============================================================================
 // Game_Party
 //=============================================================================
-	
+
 	Game_Party.prototype.hateTarget = function(hates) {
 		// 
 		var max = -1;
@@ -1008,7 +1037,6 @@
 	};
 	var _Game_Party_prototype_refresh = Game_Party.prototype.refresh;
 	Game_Party.prototype.refresh = function() {
-		// 
 		_Game_Party_prototype_refresh.call(this);
 		if (this.inBattle()) {
 			SceneManager._scene.initHateGaugeWindows();
@@ -1043,6 +1071,16 @@
 		}
 		return who;
 	}
+
+	// ver 1.20
+	var _Game_Actor_prototype_performCollapse = Game_Actor.prototype.performCollapse;
+	Game_Actor.prototype.performCollapse = function() {
+		_Game_Actor_prototype_performCollapse.call(this);
+		if (!DeadHateReset) return;
+		if ($gameParty.inBattle()) {
+			$gameTroop.resetHateForTheActor(this.actorId());
+		}
+	};
 	
 //=============================================================================
 // Sprite_Battler
@@ -1066,13 +1104,13 @@ Sprite_Actor.prototype.updatePosition = function() {
 // Game_Action
 //=====
 	// 上書き
+/*
 	Game_Action.prototype.targetsForOpponents = function() {
 		var targets = [];
 		var unit = this.opponentsUnit();
 		if (this.isForRandom()) {
-			for (var i = 0; i < this.numTargets(); i++) {
-				targets.push(unit.randomTarget());
-			}
+		// ver1.19リファクタリング
+			return this.randomTargets(unit);
 		} else if (this.isForOne()) {
 			if (this._targetIndex < 0) {
 				// 使用者がアクターだった場合
@@ -1097,6 +1135,31 @@ Sprite_Actor.prototype.updatePosition = function() {
 		}
 		return targets;
 	};
+*/
+	// ツクールMZに合わせてリファクタリング
+	var _Game_Action_prototype_targetsForAlive = Game_Action.prototype.targetsForAlive;
+	Game_Action.prototype.targetsForAlive = function(unit) {
+	    if (this._subjectActorId > 0) {
+					return _Game_Action_prototype_targetsForAlive.call(this, unit);
+	    }
+	    if (!this.isForOne()) {
+					return _Game_Action_prototype_targetsForAlive.call(this, unit);
+	    }
+	    if (this.isForFriend()) {
+					return _Game_Action_prototype_targetsForAlive.call(this, unit);
+	    }
+	    if (this._targetIndex >= 0) {
+					return _Game_Action_prototype_targetsForAlive.call(this, unit);
+	    }
+			if (this._item.object().meta.HATE_target) {
+				// v1.09
+				var no = Number(this._item.object().meta.HATE_target);
+				return [unit.hateTargetNumber(this.subject().hates(), no)];
+			} else {
+				return [unit.hateTarget(this.subject().hates())];
+			}
+	};
+
 
 	Game_Action.prototype.confusionTarget = function() {
 		switch (this.subject().confusionLevel()) {
@@ -1234,9 +1297,12 @@ Sprite_Actor.prototype.updatePosition = function() {
 			add = (result.addedDebuffs.length + result.removedBuffs.length) * add;
 			hate += add;
 		}
-
-		hate = Math.ceil(hate * user.tgr);
-
+		// 
+		if (hate > 0) {
+			hate = Math.ceil(hate * user.tgr);
+		} else {
+			hate = Math.ceil(hate);
+		}
 		target.hate(user.actorId(), hate);
 		/*if (HateDebugMode) {
 			console.log(target.name() + "の" + user.name() + "へのヘイトが" + hate + "ポイント増加");
@@ -1377,7 +1443,11 @@ Sprite_Actor.prototype.updatePosition = function() {
 				hate += add;
 			}
 
-			hate = Math.ceil(hate * user.tgr);
+			if (hate > 0) {
+				hate = Math.ceil(hate * user.tgr);	
+			} else {
+				hate = Math.ceil(hate);
+			}
 
 			enemy.hate(user.actorId(), hate);
 			/*if (HateDebugMode) {
@@ -1423,7 +1493,11 @@ Sprite_Actor.prototype.updatePosition = function() {
 						}
 						hate = 0;
 					}
-					hate = Math.ceil(hate * actor.tgr);
+					if (hate > 0) {
+						hate = Math.ceil(hate * user.tgr);
+					} else {
+						hate = Math.ceil(hate);
+					}
 					if (hate != 0) action.makeSuccess(target);
 					enemy.hate(actor.actorId(), hate);
 				});
